@@ -28,12 +28,15 @@ jobs:
     - name: Generate Native Platforms
       run: flutter create --project-name thaker --platforms=android .
 
-    - name: Configure Android Gradle & Fix Kotlin Conflicts
+    - name: Configure Android Permissions & Gradle
       run: |
-        # 1. رفع minSdk إلى 21 لدعم Isar
+        # 1. إضافة صلاحيات الإنترنت والمنبهات في AndroidManifest.xml
+        sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>\n    <uses-permission android:name="android.permission.VIBRATE"/>\n    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>' android/app/src/main/AndroidManifest.xml
+
+        # 2. ضبط minSdk إلى 21
         sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 21/g' android/app/build.gradle
-        
-        # 2. إجبار Gradle على استبعاد النسخ المتضاربة وتوحيد Kotlin
+
+        # 3. منع تعارض كوتلن
         cat << 'GRADLE_EOF' >> android/app/build.gradle
 
         configurations.all {
