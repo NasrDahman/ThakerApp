@@ -6,7 +6,7 @@ import '../models/chat_message.dart';
 import 'db_service.dart';
 
 // ضع رابط العامل الخاص بك هنا
-const String workerEndpoint = 'https://YOUR_WORKER_URL.workers.dev';
+const String workerEndpoint = 'https://thaker-ai-proxy.26160184.workers.dev';
 
 final aiServiceProvider = Provider((ref) => AIService());
 
