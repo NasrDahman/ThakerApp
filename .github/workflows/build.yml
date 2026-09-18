@@ -28,6 +28,23 @@ jobs:
     - name: Generate Native Platforms
       run: flutter create --project-name thaker --platforms=android .
 
+    - name: Configure Android Gradle & Fix Kotlin Conflicts
+      run: |
+        # 1. رفع minSdk إلى 21 لدعم Isar
+        sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 21/g' android/app/build.gradle
+        
+        # 2. إجبار Gradle على استبعاد النسخ المتضاربة وتوحيد Kotlin
+        cat << 'GRADLE_EOF' >> android/app/build.gradle
+
+        configurations.all {
+            resolutionStrategy {
+                force "org.jetbrains.kotlin:kotlin-stdlib:1.8.22"
+                force "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22"
+                force "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22"
+            }
+        }
+        GRADLE_EOF
+
     - name: Install Dependencies
       run: flutter pub get
 
