@@ -2,52 +2,57 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/services/ai_service.dart';
 
-class AiView extends ConsumerStatefulWidget {
-  const AiView({super.key});
+class AIView extends ConsumerStatefulWidget {
+  const AIView({super.key});
 
   @override
-  ConsumerState<AiView> createState() => _AiViewState();
+  ConsumerState<AIView> createState() => _AIViewState();
 }
 
-class _AiViewState extends ConsumerState<AiView> {
-  final _controller = TextEditingController();
-  String _liveAiResponse = '';
+class _AIViewState extends ConsumerState<AIView> {
+  final TextEditingController _controller = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   bool _isLoading = false;
 
-  void _sendMessage() async {
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  Future<void> _sendMessage() async {
     final text = _controller.text.trim();
     if (text.isEmpty || _isLoading) return;
 
     _controller.clear();
-    setState(() {
-      _isLoading = true;
-      _liveAiResponse = '';
-    });
+    setState(() => _isLoading = true);
+    _scrollToBottom();
 
     try {
-      await ref.read(aiServiceProvider).askAssistant(
-            prompt: text,
-            onChunkReceived: (chunk) {
-              setState(() {
-                _liveAiResponse += chunk;
-              });
-            },
-          );
+      await ref.read(aiServiceProvider).askAssistant(text);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('خطأ أثناء الاتصال: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر إرسال الرسالة: $e')),
+        );
+      }
     } finally {
-      setState(() {
-        _isLoading = false;
-        _liveAiResponse = '';
-      });
+      if (mounted) {
+        setState(() => _isLoading = false);
+        _scrollToBottom();
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final history = ref.watch(chatMessagesProvider);
+    final chatAsync = ref.watch(chatMessagesProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -55,8 +60,7 @@ class _AiViewState extends ConsumerState<AiView> {
         centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.delete_sweep_rounded),
-            tooltip: 'مسح الأرشيف',
+            icon: const Icon(Icons.delete_outline_rounded),
             onPressed: () => ref.read(aiServiceProvider).clearHistory(),
           ),
         ],
@@ -64,77 +68,83 @@ class _AiViewState extends ConsumerState<AiView> {
       body: Column(
         children: [
           Expanded(
-            child: history.when(
+            child: chatAsync.when(
               data: (messages) {
-                return ListView(
-                  reverse: true,
+                WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+                if (messages.isEmpty) {
+                  return const Center(
+                    child: Text('ابدأ محادثتك مع المساعد الذكي "ذاكر" الآن!'),
+                  );
+                }
+                return ListView.builder(
+                  controller: _scrollController,
                   padding: const EdgeInsets.all(16),
-                  children: [
-                    if (_isLoading && _liveAiResponse.isNotEmpty)
-                      _buildChatBubble(_liveAiResponse, isUser: false, isLive: true),
-                    ...messages.map((m) => _buildChatBubble(m.text, isUser: m.isUser)),
-                  ],
+                  itemCount: messages.length,
+                  itemBuilder: (context, index) {
+                    final msg = messages[index];
+                    final isUser = msg.isUser;
+                    return Align(
+                      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: isUser ? Colors.indigo : Theme.of(context).cardColor,
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.04),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            )
+                          ],
+                        ),
+                        child: Text(
+                          msg.text,
+                          style: TextStyle(
+                            color: isUser ? Colors.white : Theme.of(context).textTheme.bodyLarge?.color,
+                            fontSize: 15,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
                 );
               },
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('خطأ: $e')),
+              error: (err, _) => Center(child: Text('خطأ: $err')),
             ),
           ),
-          if (_isLoading && _liveAiResponse.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(8.0),
-              child: LinearProgressIndicator(),
+          if (_isLoading)
+            const LinearProgressIndicator(),
+          Container(
+            padding: const EdgeInsets.all(8.0),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4)],
             ),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(12.0),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _controller,
-                      decoration: InputDecoration(
-                        hintText: 'اسأل عن أي مسألة دراسية...',
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      ),
-                      onSubmitted: (_) => _sendMessage(),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.send_rounded, color: Colors.indigo),
+                  onPressed: _sendMessage,
+                ),
+                Expanded(
+                  child: TextField(
+                    controller: _controller,
+                    textInputAction: TextInputAction.send,
+                    onSubmitted: (_) => _sendMessage(),
+                    decoration: const InputDecoration(
+                      hintText: 'اسأل عن أي مسألة دراسية...',
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  IconButton.filled(
-                    icon: const Icon(Icons.send_rounded),
-                    onPressed: _sendMessage,
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildChatBubble(String text, {required bool isUser, bool isLive = false}) {
-    return Align(
-      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.all(12),
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
-        decoration: BoxDecoration(
-          color: isUser
-              ? Colors.indigo
-              : (isLive ? Colors.indigo.withOpacity(0.1) : Colors.grey.withOpacity(0.15)),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Text(
-          text,
-          style: TextStyle(
-            color: isUser ? Colors.white : null,
-            fontStyle: isLive ? FontStyle.italic : FontStyle.normal,
-          ),
-        ),
       ),
     );
   }
