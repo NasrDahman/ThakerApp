@@ -1,84 +1,54 @@
 import 'dart:convert';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
-import 'package:isar/isar.dart';
 import '../models/chat_message.dart';
 import 'db_service.dart';
 
-// ضع رابط العامل الخاص بك هنا
-const String workerEndpoint = 'https://thaker-ai-proxy.26160184.workers.dev';
-
-final aiServiceProvider = Provider((ref) => AIService());
-
-final chatMessagesProvider = StreamProvider.autoDispose<List<ChatMessage>>((ref) {
-  return DBService.isar.chatMessages
-      .where()
-      .sortByTimestampDesc()
-      .watch(fireImmediately: true);
-});
-
 class AIService {
-  final Isar _isar = DBService.isar;
+  static const String workerEndpoint = 'https://thaker-ai-proxy.26160184.workers.dev';
 
-  Future<void> askAssistant({
-    required String prompt,
-    required Function(String chunk) onChunkReceived,
-  }) async {
-    // 1. حفظ رسالة المستخدم في Isar
+  static Future<String> sendMessage(String userPrompt) async {
+    // 1. حفظ رسالة المستخدم محلياً
     final userMsg = ChatMessage()
-      ..text = prompt
+      ..text = userPrompt
       ..isUser = true
       ..timestamp = DateTime.now();
 
-    await _isar.writeTxn(() async {
-      await _isar.chatMessages.put(userMsg);
+    await DBService.isar.writeTxn(() async {
+      await DBService.isar.chatMessages.put(userMsg);
     });
 
-    // 2. إرسال الطلب للخادم الوسيط
-    final request = http.Request('POST', Uri.parse(workerEndpoint));
-    request.headers['Content-Type'] = 'application/json';
-    request.body = jsonEncode({
-      'prompt': prompt,
-      'systemPrompt': 'أنت المساعد الذكي لتطبيق ذاكر. أجب باحترافية وتلخيص يناسب الطلاب.',
-    });
+    try {
+      final response = await http.post(
+        Uri.parse(workerEndpoint),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'prompt': userPrompt,
+          'systemPrompt': 'أنت ذاكر، مرشد ومساعد دراسي ذكي للطلاب. إجاباتك دقيقة، مركزة، وداعمة باللغة العربية.',
+        }),
+      );
 
-    final streamedResponse = await request.send();
-    final buffer = StringBuffer();
+      final data = jsonDecode(utf8.decode(response.bodyBytes));
 
-    // 3. قراءة البيانات المتدفقة (Streaming SSE)
-    await streamedResponse.stream
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())
-        .listen((line) {
-      if (line.startsWith('data: ')) {
-        final jsonStr = line.substring(6).trim();
-        try {
-          final data = jsonDecode(jsonStr);
-          final textChunk = data['candidates']?[0]?['content']?['parts']?[0]?['text'];
-          if (textChunk != null) {
-            buffer.write(textChunk);
-            onChunkReceived(textChunk);
-          }
-        } catch (_) {}
+      if (response.statusCode == 200 && data['reply'] != null) {
+        final replyText = data['reply'] as String;
+
+        // 2. حفظ رد الذكاء الاصطناعي محلياً
+        final aiMsg = ChatMessage()
+          ..text = replyText
+          ..isUser = false
+          ..timestamp = DateTime.now();
+
+        await DBService.isar.writeTxn(() async {
+          await DBService.isar.chatMessages.put(aiMsg);
+        });
+
+        return replyText;
+      } else {
+        final errorMsg = data['error'] ?? 'حدث خطأ غير متوقع من الخادم';
+        throw Exception(errorMsg);
       }
-    }).asFuture();
-
-    // 4. حفظ إجابة المساعد كاملة في Isar
-    if (buffer.isNotEmpty) {
-      final aiMsg = ChatMessage()
-        ..text = buffer.toString()
-        ..isUser = false
-        ..timestamp = DateTime.now();
-
-      await _isar.writeTxn(() async {
-        await _isar.chatMessages.put(aiMsg);
-      });
+    } catch (e) {
+      rethrow;
     }
-  }
-
-  Future<void> clearHistory() async {
-    await _isar.writeTxn(() async {
-      await _isar.chatMessages.clear();
-    });
   }
 }

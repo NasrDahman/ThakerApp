@@ -28,15 +28,24 @@ jobs:
     - name: Generate Native Platforms
       run: flutter create --project-name thaker --platforms=android .
 
-    - name: Configure Android Permissions & Gradle
+    - name: Configure Android Name, Icon and Permissions
       run: |
-        # 1. إضافة صلاحيات الإنترنت والمنبهات في AndroidManifest.xml
+        # 1. ضبط اسم التطبيق بالعربية "ذاكر" في ملف strings.xml والـ Manifest
+        mkdir -p android/app/src/main/res/values
+        cat << 'STRINGS_EOF' > android/app/src/main/res/values/strings.xml
+        <?xml version="1.0" encoding="utf-8"?>
+        <resources>
+            <string name="app_name">ذاكر</string>
+        </resources>
+        STRINGS_EOF
+
+        sed -i 's/android:label="[^"]*"/android:label="@string\/app_name"/g' android/app/src/main/AndroidManifest.xml
+
+        # 2. حقن صلاحيات الإنترنت والإشعارات المجدولة
         sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>\n    <uses-permission android:name="android.permission.VIBRATE"/>\n    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>' android/app/src/main/AndroidManifest.xml
 
-        # 2. ضبط minSdk إلى 21
+        # 3. ضبط minSdk 21 وتوحيد كوتلن
         sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 21/g' android/app/build.gradle
-
-        # 3. منع تعارض كوتلن
         cat << 'GRADLE_EOF' >> android/app/build.gradle
 
         configurations.all {
@@ -50,6 +59,9 @@ jobs:
 
     - name: Install Dependencies
       run: flutter pub get
+
+    - name: Generate App Launcher Icons
+      run: dart run flutter_launcher_icons
 
     - name: Run Build Runner
       run: dart run build_runner build --delete-conflicting-outputs
