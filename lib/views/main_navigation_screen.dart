@@ -14,10 +14,10 @@ class MainNavigationScreen extends StatefulWidget {
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _currentIndex = 0;
 
-  final List<Widget> _views = const [
+  final List<Widget> _screens = const [
     HomeView(),
     ScheduleView(),
-    AiView(),
+    AIView(),
     SettingsView(),
   ];
 
@@ -26,7 +26,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     return Scaffold(
       body: IndexedStack(
         index: _currentIndex,
-        children: _views,
+        children: _screens,
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
@@ -38,22 +38,22 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home_rounded),
+            selectedIcon: Icon(Icons.home),
             label: 'الرئيسية',
           ),
           NavigationDestination(
             icon: Icon(Icons.calendar_today_outlined),
-            selectedIcon: Icon(Icons.calendar_today_rounded),
+            selectedIcon: Icon(Icons.calendar_today),
             label: 'جدولي',
           ),
           NavigationDestination(
-            icon: Icon(Icons.auto_awesome_outlined),
-            selectedIcon: Icon(Icons.auto_awesome_rounded),
-            label: 'ذاكر AI',
+            icon: Icon(Icons.psychology_outlined),
+            selectedIcon: Icon(Icons.psychology),
+            label: 'AI',
           ),
           NavigationDestination(
             icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings_rounded),
+            selectedIcon: Icon(Icons.settings),
             label: 'الإعدادات',
           ),
         ],
