@@ -25,6 +25,9 @@ jobs:
         flutter-version: '3.19.0'
         channel: 'stable'
 
+    - name: Generate Native Platforms
+      run: flutter create --platforms=android .
+
     - name: Install Dependencies
       run: flutter pub get
 
