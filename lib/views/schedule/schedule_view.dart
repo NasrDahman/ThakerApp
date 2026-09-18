@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/models/lecture.dart';
 import '../../data/services/study_repository.dart';
+import '../../data/services/db_service.dart';
+import 'package:isar/isar.dart';
 
 class ScheduleView extends ConsumerStatefulWidget {
   const ScheduleView({super.key});
@@ -11,147 +14,264 @@ class ScheduleView extends ConsumerStatefulWidget {
 }
 
 class _ScheduleViewState extends ConsumerState<ScheduleView> {
-  int _selectedDay = DateTime.now().weekday;
+  int _selectedDay = 7; // الأحد افتراضياً
+  int _maxLectures = 4;
+  final TextEditingController _maxCtrl = TextEditingController(text: '4');
+  final List<TextEditingController> _lectureControllers = [];
 
   final List<Map<String, dynamic>> _days = const [
     {'name': 'السبت', 'val': 6},
     {'name': 'الأحد', 'val': 7},
-    {'name': 'الاثنين', 'val': 1},
+    {'name': 'الإثنين', 'val': 1},
     {'name': 'الثلاثاء', 'val': 2},
     {'name': 'الأربعاء', 'val': 3},
     {'name': 'الخميس', 'val': 4},
+    {'name': 'الجمعة (المراجعة)', 'val': 5},
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _loadMaxLectures();
+  }
+
+  Future<void> _loadMaxLectures() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedMax = prefs.getInt('max_lectures') ?? 4;
+    setState(() {
+      _maxLectures = savedMax;
+      _maxCtrl.text = '$savedMax';
+    });
+    _initInputs();
+    _loadCurrentDayLectures();
+  }
+
+  void _initInputs() {
+    _lectureControllers.clear();
+    for (int i = 0; i < _maxLectures; i++) {
+      _lectureControllers.add(TextEditingController());
+    }
+  }
+
+  Future<void> _loadCurrentDayLectures() async {
+    final repo = ref.read(studyRepoProvider);
+    final lectures = await repo.getLecturesByDay(_selectedDay);
+    for (int i = 0; i < _maxLectures; i++) {
+      final match = lectures.where((l) => l.slotIndex == (i + 1));
+      if (match.isNotEmpty) {
+        _lectureControllers[i].text = match.first.subjectName;
+      } else {
+        _lectureControllers[i].clear();
+      }
+    }
+    setState(() {});
+  }
+
+  Future<void> _saveCurrentDayLectures() async {
+    final isar = DBService.isar;
+    await isar.writeTxn(() async {
+      final old = await isar.lectures.filter().dayOfWeekEqualTo(_selectedDay).findAll();
+      for (var l in old) {
+        await isar.lectures.delete(l.id);
+      }
+      for (int i = 0; i < _maxLectures; i++) {
+        final text = _lectureControllers[i].text.trim();
+        if (text.isNotEmpty) {
+          final lec = Lecture()
+            ..dayOfWeek = _selectedDay
+            ..slotIndex = i + 1
+            ..subjectName = text;
+          await isar.lectures.put(lec);
+        }
+      }
+    });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم حفظ جدول هذا اليوم بنجاح')),
+      );
+      setState(() {});
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final repo = ref.watch(studyRepoProvider);
+    final selectedDayName = _days.firstWhere((d) => d['val'] == _selectedDay)['name'];
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('جدولي الأسبوعي'),
         centerTitle: true,
       ),
-      body: Column(
+      body: ListView(
+        padding: const EdgeInsets.all(14.0),
         children: [
+          // 1. الإعداد السريع للجدول (الحد الأقصى للمحاضرات)
+          Card(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            child: Padding(
+              padding: const EdgeInsets.all(14.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('الإعداد السريع للجدول',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.blueAccent)),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      const Text('الحد الأقصى للمحاضرات: ', style: TextStyle(fontSize: 14)),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 50,
+                        child: TextField(
+                          controller: _maxCtrl,
+                          keyboardType: TextInputType.number,
+                          textAlign: TextAlign.center,
+                          decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
+                        ),
+                      ),
+                      const Spacer(),
+                      ElevatedButton(
+                        onPressed: () async {
+                          final val = int.tryParse(_maxCtrl.text.trim()) ?? 4;
+                          final prefs = await SharedPreferences.getInstance();
+                          await prefs.setInt('max_lectures', val);
+                          setState(() {
+                            _maxLectures = val;
+                            _initInputs();
+                          });
+                          _loadCurrentDayLectures();
+                        },
+                        child: const Text('تحديث'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // 2. الجدول الأسبوعي الشامل
+          Card(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('الجدول الأسبوعي الشامل',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  FutureBuilder<List<Lecture>>(
+                    future: DBService.isar.lectures.where().findAll(),
+                    builder: (context, snapshot) {
+                      final allLecs = snapshot.data ?? [];
+                      return Table(
+                        border: TableBorder.all(color: Colors.grey.withOpacity(0.3)),
+                        columnWidths: const {
+                          0: FlexColumnWidth(1.2),
+                          1: FlexColumnWidth(2.8),
+                        },
+                        children: [
+                          TableRow(
+                            decoration: BoxDecoration(color: Colors.blueAccent.withOpacity(0.1)),
+                            children: const [
+                              Padding(padding: EdgeInsets.all(6), child: Text('اليوم', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold))),
+                              Padding(padding: EdgeInsets.all(6), child: Text('المقررات', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold))),
+                            ],
+                          ),
+                          ..._days.map((d) {
+                            final dayLecs = allLecs
+                                .where((l) => l.dayOfWeek == d['val'])
+                                .map((l) => l.subjectName)
+                                .join(' - ');
+                            return TableRow(
+                              children: [
+                                Padding(padding: const EdgeInsets.all(6), child: Text(d['name'], textAlign: TextAlign.center, style: const TextStyle(fontSize: 12))),
+                                Padding(padding: const EdgeInsets.all(6), child: Text(dayLecs.isEmpty ? '—' : dayLecs, style: const TextStyle(fontSize: 12))),
+                              ],
+                            );
+                          }).toList(),
+                        ],
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // 3. شريط الأيام
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Row(
               children: _days.map((d) {
                 final isSelected = _selectedDay == d['val'];
                 return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 3),
                   child: ChoiceChip(
-                    label: Text(d['name']),
+                    label: Text(d['name'], style: const TextStyle(fontSize: 12)),
                     selected: isSelected,
                     onSelected: (selected) {
-                      if (selected) setState(() => _selectedDay = d['val']);
+                      if (selected) {
+                        setState(() => _selectedDay = d['val']);
+                        _loadCurrentDayLectures();
+                      }
                     },
                   ),
                 );
               }).toList(),
             ),
           ),
-          const Divider(),
-          Expanded(
-            child: FutureBuilder<List<Lecture>>(
-              future: repo.getLecturesByDay(_selectedDay),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                final lectures = snapshot.data!;
-                if (lectures.isEmpty) {
-                  return const Center(
-                    child: Text('لا توجد محاضرات مضافة لهذا اليوم'),
-                  );
-                }
+          const SizedBox(height: 12),
 
-                return ListView.builder(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: lectures.length,
-                  itemBuilder: (context, index) {
-                    final item = lectures[index];
-                    return Card(
-                      child: ListTile(
-                        leading: CircleAvatar(
-                          child: Text('${item.slotIndex}'),
-                        ),
-                        title: Text(item.subjectName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text(item.room != null && item.room!.isNotEmpty 
-                            ? 'القاعة: ${item.room}' 
-                            : 'لم تحدد القاعة'),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                          onPressed: () async {
-                            await repo.deleteLecture(item.id);
-                            setState(() {});
-                          },
-                        ),
+          // 4. تعديل محاضرات اليوم المحدد
+          Card(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            child: Padding(
+              padding: const EdgeInsets.all(14.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('تعديل محاضرات يوم: $selectedDayName',
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.blueAccent)),
+                  const SizedBox(height: 10),
+                  ...List.generate(_maxLectures, (index) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4.0),
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: 80,
+                            child: Text('محاضرة ${index + 1}:', style: const TextStyle(fontSize: 13)),
+                          ),
+                          Expanded(
+                            child: TextField(
+                              controller: _lectureControllers[index],
+                              decoration: const InputDecoration(
+                                isDense: true,
+                                border: OutlineInputBorder(),
+                                hintText: 'اسم المقرر...',
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     );
-                  },
-                );
-              },
+                  }),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _saveCurrentDayLectures,
+                      child: Text('حفظ جدول يوم $selectedDayName'),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showAddLectureDialog(context),
-        label: const Text('إضافة محاضرة'),
-        icon: const Icon(Icons.add),
-      ),
-    );
-  }
-
-  void _showAddLectureDialog(BuildContext context) {
-    final subjectCtrl = TextEditingController();
-    final roomCtrl = TextEditingController();
-    final slotCtrl = TextEditingController(text: '1');
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('إضافة مقرر دراسي'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: subjectCtrl,
-              decoration: const InputDecoration(labelText: 'اسم المقرر'),
-            ),
-            TextField(
-              controller: roomCtrl,
-              decoration: const InputDecoration(labelText: 'المكان / القاعة (اختياري)'),
-            ),
-            TextField(
-              controller: slotCtrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'ترتيب المحاضرة (1, 2, 3...)'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('إلغاء'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              if (subjectCtrl.text.trim().isNotEmpty) {
-                final lecture = Lecture()
-                  ..subjectName = subjectCtrl.text.trim()
-                  ..room = roomCtrl.text.trim()
-                  ..dayOfWeek = _selectedDay
-                  ..slotIndex = int.tryParse(slotCtrl.text.trim()) ?? 1;
-
-                await ref.read(studyRepoProvider).saveLecture(lecture);
-                Navigator.pop(ctx);
-                setState(() {});
-              }
-            },
-            child: const Text('حفظ'),
           ),
         ],
       ),
