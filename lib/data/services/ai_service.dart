@@ -12,8 +12,7 @@ final chatMessagesProvider = StreamProvider.autoDispose<List<ChatMessage>>((ref)
 final aiServiceProvider = Provider((ref) => AIService());
 
 class AIService {
-  // استخدام وكيل مفتوح لا يحظر الاتصالات المحلية
-  static const String directProxy = 'https://corsproxy.io/?url=https://thaker-ai-proxy.26160184.workers.dev';
+  static const String workerEndpoint = 'https://thaker-ai-proxy.26160184.workers.dev';
 
   Future<void> askAssistant(String prompt) async {
     final userMsg = ChatMessage()
@@ -27,13 +26,12 @@ class AIService {
 
     try {
       final response = await http.post(
-        Uri.parse(directProxy),
+        Uri.parse(workerEndpoint),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'prompt': prompt,
-          'systemPrompt': 'أنت ذاكر، مرشد ومساعد دراسي ذكي للطلاب. إجاباتك دقيقة وبلا ماركداون وبلا نجوم نهائيا.',
         }),
-      );
+      ).timeout(const Duration(seconds: 25));
 
       final data = jsonDecode(utf8.decode(response.bodyBytes));
 
@@ -48,11 +46,11 @@ class AIService {
           await DBService.isar.chatMessages.put(aiMsg);
         });
       } else {
-        throw Exception(data['error'] ?? 'حدث خطأ في استجابة الخادم');
+        throw Exception(data['error'] ?? 'فشل الاتصال بالخادم');
       }
     } catch (e) {
       final errorMsg = ChatMessage()
-        ..text = 'تعذر الاتصال بالخادم. يرجى التأكد من توفر الإنترنت.'
+        ..text = 'عذراً، حدث خطأ أثناء معالجة الطلب. تأكد من اتصال الإنترنت ثم أعد المحاولة.'
         ..isUser = false
         ..timestamp = DateTime.now();
 
