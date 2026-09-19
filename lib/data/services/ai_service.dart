@@ -12,7 +12,8 @@ final chatMessagesProvider = StreamProvider.autoDispose<List<ChatMessage>>((ref)
 final aiServiceProvider = Provider((ref) => AIService());
 
 class AIService {
-  static const String workerEndpoint = 'https://thaker-ai-proxy.26160184.workers.dev';
+  // بوابة وسيطة مفتوحة لتجاوز حجب نطاق workers.dev محلياً
+  static const String workerEndpoint = 'https://api.allorigins.win/raw?url=https://thaker-ai-proxy.26160184.workers.dev';
 
   Future<void> askAssistant(String prompt) async {
     final userMsg = ChatMessage()
@@ -31,7 +32,7 @@ class AIService {
         body: jsonEncode({
           'prompt': prompt,
         }),
-      ).timeout(const Duration(seconds: 25));
+      ).timeout(const Duration(seconds: 30));
 
       final data = jsonDecode(utf8.decode(response.bodyBytes));
 
