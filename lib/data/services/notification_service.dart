@@ -1,4 +1,6 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'db_service.dart';
@@ -8,6 +10,9 @@ import '../models/task.dart';
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _notificationsPlugin =
       FlutterLocalNotificationsPlugin();
+
+  static const String _hourKey = 'report_hour';
+  static const String _minuteKey = 'report_minute';
 
   static Future<void> init() async {
     tz.initializeTimeZones();
@@ -26,7 +31,29 @@ class NotificationService {
     }
   }
 
-  static Future<void> showImmediateNotification(String title, String body) async {
+  static Future<TimeOfDay> getReportTime() async {
+    final prefs = await SharedPreferences.getInstance();
+    final hour = prefs.getInt(_hourKey) ?? 21;
+    final minute = prefs.getInt(_minuteKey) ?? 0;
+    return TimeOfDay(hour: hour, minute: minute);
+  }
+
+  static Future<void> saveReportTime(int hour, int minute) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_hourKey, hour);
+    await prefs.setInt(_minuteKey, minute);
+    await scheduleDailyReport(hour, minute);
+  }
+
+  static Future<void> showDailyReportNotification() async {
+    final tasks = await DBService.isar.tasks.where().findAll();
+    final done = tasks.where((t) => t.isCompleted).length;
+    final remaining = tasks.length - done;
+
+    final body = tasks.isEmpty
+        ? 'لا توجد مهام مسجلة اليوم. استغل يومك في التعلم!'
+        : 'أنجزت $done من المهام، ومتبقي لديك $remaining مهام.';
+
     const androidDetails = AndroidNotificationDetails(
       'daily_report_channel',
       'التقرير اليومي',
@@ -34,9 +61,10 @@ class NotificationService {
       importance: Importance.max,
       priority: Priority.high,
     );
+
     await _notificationsPlugin.show(
       0,
-      title,
+      'تقرير الإنجاز اليومي 📊',
       body,
       const NotificationDetails(android: androidDetails),
     );
