@@ -16,7 +16,6 @@ class NotificationService {
 
   static Future<void> init() async {
     tz.initializeTimeZones();
-    tz.setLocalLocation(tz.getLocation('Asia/Aden'));
 
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
     const initSettings = InitializationSettings(android: androidSettings);
@@ -60,6 +59,8 @@ class NotificationService {
       channelDescription: 'قناة إشعارات الإنجاز والمهام اليومية',
       importance: Importance.max,
       priority: Priority.high,
+      playSound: true,
+      enableVibration: true,
     );
 
     await _notificationsPlugin.show(
@@ -71,11 +72,13 @@ class NotificationService {
   }
 
   static Future<void> scheduleDailyReport(int hour, int minute) async {
-    final now = tz.TZDateTime.now(tz.local);
-    var scheduledDate = tz.TZDateTime(tz.local, now.year, now.month, now.day, hour, minute);
+    // إلغاء أي جدول سابق لنفس القناة
+    await _notificationsPlugin.cancel(100);
 
-    if (scheduledDate.isBefore(now)) {
-      scheduledDate = scheduledDate.add(const Duration(days: 1));
+    final now = DateTime.now();
+    var scheduled = DateTime(now.year, now.month, now.day, hour, minute);
+    if (scheduled.isBefore(now)) {
+      scheduled = scheduled.add(const Duration(days: 1));
     }
 
     final tasks = await DBService.isar.tasks.where().findAll();
@@ -92,13 +95,17 @@ class NotificationService {
       channelDescription: 'قناة إشعارات الإنجاز والمهام اليومية',
       importance: Importance.max,
       priority: Priority.high,
+      playSound: true,
+      enableVibration: true,
     );
+
+    final tzScheduled = tz.TZDateTime.from(scheduled, tz.local);
 
     await _notificationsPlugin.zonedSchedule(
       100,
       'تقرير الإنجاز اليومي 📊',
       body,
-      scheduledDate,
+      tzScheduled,
       const NotificationDetails(android: androidDetails),
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       uiLocalNotificationDateInterpretation:
