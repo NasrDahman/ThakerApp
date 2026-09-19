@@ -14,7 +14,7 @@ class ScheduleView extends ConsumerStatefulWidget {
 }
 
 class _ScheduleViewState extends ConsumerState<ScheduleView> {
-  int _selectedDay = 7; // الأحد افتراضياً
+  int _selectedDay = 7;
   int _maxLectures = 4;
   final TextEditingController _maxCtrl = TextEditingController(text: '4');
   final List<TextEditingController> _lectureControllers = [];
@@ -104,59 +104,50 @@ class _ScheduleViewState extends ConsumerState<ScheduleView> {
         centerTitle: true,
       ),
       body: ListView(
-        padding: const EdgeInsets.all(14.0),
+        padding: const EdgeInsets.all(12.0),
         children: [
-          // 1. الإعداد السريع للجدول (الحد الأقصى للمحاضرات)
           Card(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             child: Padding(
-              padding: const EdgeInsets.all(14.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              padding: const EdgeInsets.all(12.0),
+              child: Row(
                 children: [
-                  const Text('الإعداد السريع للجدول',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.blueAccent)),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      const Text('الحد الأقصى للمحاضرات: ', style: TextStyle(fontSize: 14)),
-                      const SizedBox(width: 8),
-                      SizedBox(
-                        width: 50,
-                        child: TextField(
-                          controller: _maxCtrl,
-                          keyboardType: TextInputType.number,
-                          textAlign: TextAlign.center,
-                          decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
-                        ),
-                      ),
-                      const Spacer(),
-                      ElevatedButton(
-                        onPressed: () async {
-                          final val = int.tryParse(_maxCtrl.text.trim()) ?? 4;
-                          final prefs = await SharedPreferences.getInstance();
-                          await prefs.setInt('max_lectures', val);
-                          setState(() {
-                            _maxLectures = val;
-                            _initInputs();
-                          });
-                          _loadCurrentDayLectures();
-                        },
-                        child: const Text('تحديث'),
-                      ),
-                    ],
+                  const Text('الحد الأقصى للمحاضرات: ', style: TextStyle(fontSize: 14)),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 45,
+                    child: TextField(
+                      controller: _maxCtrl,
+                      keyboardType: TextInputType.number,
+                      textAlign: TextAlign.center,
+                      decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
+                    ),
+                  ),
+                  const Spacer(),
+                  ElevatedButton(
+                    onPressed: () async {
+                      final val = int.tryParse(_maxCtrl.text.trim()) ?? 4;
+                      final prefs = await SharedPreferences.getInstance();
+                      await prefs.setInt('max_lectures', val);
+                      setState(() {
+                        _maxLectures = val;
+                        _initInputs();
+                      });
+                      _loadCurrentDayLectures();
+                    },
+                    child: const Text('تحديث'),
                   ),
                 ],
               ),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
 
-          // 2. الجدول الأسبوعي الشامل
+          // الجدول المقسم لأعمدة حسب عدد المحاضرات
           Card(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             child: Padding(
-              padding: const EdgeInsets.all(12.0),
+              padding: const EdgeInsets.all(10.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -167,33 +158,56 @@ class _ScheduleViewState extends ConsumerState<ScheduleView> {
                     future: DBService.isar.lectures.where().findAll(),
                     builder: (context, snapshot) {
                       final allLecs = snapshot.data ?? [];
-                      return Table(
-                        border: TableBorder.all(color: Colors.grey.withOpacity(0.3)),
-                        columnWidths: const {
-                          0: FlexColumnWidth(1.2),
-                          1: FlexColumnWidth(2.8),
-                        },
-                        children: [
-                          TableRow(
-                            decoration: BoxDecoration(color: Colors.blueAccent.withOpacity(0.1)),
-                            children: const [
-                              Padding(padding: EdgeInsets.all(6), child: Text('اليوم', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold))),
-                              Padding(padding: EdgeInsets.all(6), child: Text('المقررات', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold))),
-                            ],
-                          ),
-                          ..._days.map((d) {
-                            final dayLecs = allLecs
-                                .where((l) => l.dayOfWeek == d['val'])
-                                .map((l) => l.subjectName)
-                                .join(' - ');
-                            return TableRow(
+                      return SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Table(
+                          defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+                          border: TableBorder.all(color: Colors.grey.withOpacity(0.3)),
+                          columnWidths: {
+                            0: const FixedColumnWidth(85),
+                            for (int i = 1; i <= _maxLectures; i++)
+                              i: const FixedColumnWidth(100),
+                          },
+                          children: [
+                            TableRow(
+                              decoration: BoxDecoration(color: Colors.blueAccent.withOpacity(0.12)),
                               children: [
-                                Padding(padding: const EdgeInsets.all(6), child: Text(d['name'], textAlign: TextAlign.center, style: const TextStyle(fontSize: 12))),
-                                Padding(padding: const EdgeInsets.all(6), child: Text(dayLecs.isEmpty ? '—' : dayLecs, style: const TextStyle(fontSize: 12))),
+                                const Padding(
+                                  padding: EdgeInsets.all(6),
+                                  child: Text('اليوم', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                ),
+                                for (int i = 1; i <= _maxLectures; i++)
+                                  Padding(
+                                    padding: const EdgeInsets.all(6),
+                                    child: Text('محاضرة $i', textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                  ),
                               ],
-                            );
-                          }).toList(),
-                        ],
+                            ),
+                            ..._days.map((d) {
+                              return TableRow(
+                                children: [
+                                  Padding(
+                                    padding: const EdgeInsets.all(6),
+                                    child: Text(d['name'], textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                                  ),
+                                  for (int i = 1; i <= _maxLectures; i++)
+                                    Builder(builder: (context) {
+                                      final match = allLecs.where((l) => l.dayOfWeek == d['val'] && l.slotIndex == i);
+                                      final subject = match.isNotEmpty ? match.first.subjectName : '—';
+                                      return Padding(
+                                        padding: const EdgeInsets.all(6),
+                                        child: Text(
+                                          subject,
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(fontSize: 11, color: subject == '—' ? Colors.grey : null),
+                                        ),
+                                      );
+                                    }),
+                                ],
+                              );
+                            }).toList(),
+                          ],
+                        ),
                       );
                     },
                   ),
@@ -201,9 +215,8 @@ class _ScheduleViewState extends ConsumerState<ScheduleView> {
               ),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
 
-          // 3. شريط الأيام
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -225,27 +238,26 @@ class _ScheduleViewState extends ConsumerState<ScheduleView> {
               }).toList(),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
 
-          // 4. تعديل محاضرات اليوم المحدد
           Card(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             child: Padding(
-              padding: const EdgeInsets.all(14.0),
+              padding: const EdgeInsets.all(12.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('تعديل محاضرات يوم: $selectedDayName',
                       style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.blueAccent)),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 8),
                   ...List.generate(_maxLectures, (index) {
                     return Padding(
                       padding: const EdgeInsets.symmetric(vertical: 4.0),
                       child: Row(
                         children: [
                           SizedBox(
-                            width: 80,
-                            child: Text('محاضرة ${index + 1}:', style: const TextStyle(fontSize: 13)),
+                            width: 75,
+                            child: Text('محاضرة ${index + 1}:', style: const TextStyle(fontSize: 12)),
                           ),
                           Expanded(
                             child: TextField(
@@ -261,7 +273,7 @@ class _ScheduleViewState extends ConsumerState<ScheduleView> {
                       ),
                     );
                   }),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
