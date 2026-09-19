@@ -1,17 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../data/services/theme_service.dart';
 import '../../data/services/notification_service.dart';
 
-class SettingsView extends ConsumerStatefulWidget {
+class SettingsView extends StatefulWidget {
   const SettingsView({super.key});
 
   @override
-  ConsumerState<SettingsView> createState() => _SettingsViewState();
+  State<SettingsView> createState() => _SettingsViewState();
 }
 
-class _SettingsViewState extends ConsumerState<SettingsView> {
-  String _reportTimeText = '10:00 مساءً';
+class _SettingsViewState extends State<SettingsView> {
+  TimeOfDay _selectedTime = const TimeOfDay(hour: 21, minute: 0);
+  bool _isLoading = true;
 
   @override
   void initState() {
@@ -21,111 +20,110 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
 
   Future<void> _loadSavedTime() async {
     final time = await NotificationService.getReportTime();
-    final hour = time['hour']!;
-    final minute = time['minute']!.toString().padLeft(2, '0');
-    final period = hour >= 12 ? 'مساءً' : 'صباحاً';
-    final displayHour = hour > 12 ? hour - 12 : (hour == 0 ? 12 : hour);
-    setState(() {
-      _reportTimeText = '$displayHour:$minute $period';
-    });
+    if (mounted) {
+      setState(() {
+        _selectedTime = time;
+        _isLoading = false;
+      });
+    }
   }
 
   Future<void> _pickTime() async {
     final picked = await showTimePicker(
       context: context,
-      initialTime: const TimeOfDay(hour: 22, minute: 0),
+      initialTime: _selectedTime,
     );
 
     if (picked != null) {
+      setState(() {
+        _selectedTime = picked;
+      });
       await NotificationService.saveReportTime(picked.hour, picked.minute);
-      _loadSavedTime();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تم تحديث وقت الإشعار اليومي بنجاح')),
+          const SnackBar(content: Text('تم ضبط وقت التقرير اليومي بنجاح')),
         );
       }
     }
   }
 
+  String _formatTime(TimeOfDay time) {
+    final hour = time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
+    final minute = time.minute.toString().padLeft(2, '0');
+    final period = time.period == DayPeriod.am ? 'صباحاً' : 'مساءً';
+    return '$hour:$minute $period';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final currentTheme = ref.watch(themeNotifierProvider);
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('الإعدادات'),
         centerTitle: true,
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16.0),
-        children: [
-          const Text('المظهر والعرض', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          const SizedBox(height: 8),
-          Card(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: ListTile(
-              leading: const Icon(Icons.brightness_6_rounded),
-              title: const Text('الوضع الداكن'),
-              trailing: DropdownButton<ThemeMode>(
-                value: currentTheme,
-                underline: const SizedBox(),
-                items: const [
-                  DropdownMenuItem(value: ThemeMode.system, child: Text('النظام')),
-                  DropdownMenuItem(value: ThemeMode.light, child: Text('فاتح')),
-                  DropdownMenuItem(value: ThemeMode.dark, child: Text('داكن')),
-                ],
-                onChanged: (mode) {
-                  if (mode != null) {
-                    ref.read(themeNotifierProvider.notifier).setTheme(mode);
-                  }
-                },
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-          const Text('التنبيهات والتقارير', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          const SizedBox(height: 8),
-          Card(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: Column(
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              padding: const EdgeInsets.all(16.0),
               children: [
-                ListTile(
-                  leading: const Icon(Icons.access_time_rounded),
-                  title: const Text('وقت التقرير اليومي'),
-                  subtitle: Text('المحدد حالياً: $_reportTimeText'),
-                  trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 16),
-                  onTap: _pickTime,
+                const Text(
+                  'التنبيهات والتقارير',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blueAccent,
+                  ),
                 ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.send_to_mobile_rounded, color: Colors.indigo),
-                  title: const Text('تجربة إشعار التقرير الآن'),
-                  subtitle: const Text('إرسال تقرير تجريبي لشريط الإشعارات فوراً'),
-                  onTap: () async {
-                    await NotificationService.showDailyReportNotification();
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('تم إرسال إشعار التقرير')),
-                      );
-                    }
-                  },
+                const SizedBox(height: 8),
+                Card(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  child: Column(
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.access_time_rounded),
+                        title: const Text('وقت التقرير اليومي'),
+                        subtitle: Text('المحدد حالياً: ${_formatTime(_selectedTime)}'),
+                        trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 16),
+                        onTap: _pickTime,
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.notifications_active_outlined),
+                        title: const Text('تجربة إشعار التقرير الآن'),
+                        subtitle: const Text('إرسال تقرير تجريبي لشريط الإشعارات فوراً'),
+                        trailing: const Icon(Icons.send_rounded, size: 18),
+                        onTap: () async {
+                          await NotificationService.showDailyReportNotification();
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('تم إرسال الإشعار التجريبي')),
+                            );
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'حول التطبيق',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blueAccent,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Card(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  child: const ListTile(
+                    leading: Icon(Icons.person_outline_rounded),
+                    title: Text('المطور'),
+                    subtitle: Text('نصرالله دهمان'),
+                  ),
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 24),
-          const Text('حول التطبيق', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          const SizedBox(height: 8),
-          Card(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: const ListTile(
-              leading: Icon(Icons.person_outline_rounded),
-              title: Text('المطور'),
-              subtitle: Text('نصرالله دهمان'),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
